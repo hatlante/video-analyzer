@@ -1,65 +1,160 @@
-import Image from "next/image";
+'use client'
+
+import { useRef, useState } from 'react'
+
+type Result = { transcript: string; summary: string }
+
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', '3gp']
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
 
 export default function Home() {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const [file, setFile] = useState<File | null>(null)
+  const [processing, setProcessing] = useState(false)
+  const [result, setResult] = useState<Result | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [showTranscript, setShowTranscript] = useState(false)
+
+  function handleFile(f: File) {
+    const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+    if (!VIDEO_EXTENSIONS.includes(ext)) {
+      setError('Formato non supportato. Usa: ' + VIDEO_EXTENSIONS.join(', '))
+      return
+    }
+    setFile(f)
+    setResult(null)
+    setError(null)
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragging(false)
+    const f = e.dataTransfer.files[0]
+    if (f) handleFile(f)
+  }
+
+  async function handleAnalyze() {
+    if (!file) return
+    setProcessing(true)
+    setResult(null)
+    setError(null)
+    setShowTranscript(false)
+
+    try {
+      const form = new FormData()
+      form.append('video', file)
+
+      const res = await fetch('/api/transcribe', { method: 'POST', body: form })
+      const data = await res.json()
+
+      if (!res.ok) throw new Error(data.error ?? 'Errore sconosciuto')
+      setResult(data)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Errore durante l\'analisi')
+    } finally {
+      setProcessing(false)
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans">
+      <div className="max-w-3xl mx-auto px-6 py-12">
+        <h1 className="text-3xl font-bold mb-2">Analizzatore Video</h1>
+        <p className="text-zinc-400 mb-10 text-sm">
+          Carica un video da Telegram, WhatsApp o qualsiasi altra fonte per ottenere trascrizione e riassunto.
+        </p>
+
+        {/* Drop zone */}
+        <div
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+          className={`cursor-pointer border-2 border-dashed rounded-2xl px-8 py-12 text-center transition-colors mb-6 ${
+            dragging
+              ? 'border-indigo-500 bg-indigo-950/30'
+              : 'border-zinc-700 hover:border-zinc-500'
+          }`}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept={VIDEO_EXTENSIONS.map(e => `.${e}`).join(',')}
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
+          />
+          {file ? (
+            <div>
+              <p className="text-lg font-medium text-zinc-200 truncate">{file.name}</p>
+              <p className="text-sm text-zinc-400 mt-1">{formatBytes(file.size)}</p>
+              <p className="text-xs text-zinc-500 mt-3">Clicca per cambiare file</p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-4xl mb-3">🎬</p>
+              <p className="text-zinc-300 font-medium">Trascina qui il video</p>
+              <p className="text-zinc-500 text-sm mt-1">oppure clicca per selezionare</p>
+              <p className="text-zinc-600 text-xs mt-3">{VIDEO_EXTENSIONS.join(' · ')}</p>
+            </div>
+          )}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+        {/* Bottone analizza */}
+        {file && (
+          <button
+            onClick={handleAnalyze}
+            disabled={processing}
+            className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm transition-colors mb-6"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+            {processing ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="animate-spin">⏳</span> Analisi in corso…
+              </span>
+            ) : (
+              'Analizza video'
+            )}
+          </button>
+        )}
+
+        {/* Errore */}
+        {error && (
+          <div className="border border-red-800 bg-red-950/40 rounded-xl px-5 py-4 text-red-300 text-sm mb-6">
+            {error}
+          </div>
+        )}
+
+        {/* Risultato */}
+        {result && (
+          <section className="space-y-4">
+            <div className="border border-zinc-800 rounded-xl px-6 py-5">
+              <h2 className="text-lg font-semibold mb-3 text-zinc-200">Riassunto</h2>
+              <div className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
+                {result.summary}
+              </div>
+            </div>
+
+            <div className="border border-zinc-800 rounded-xl px-6 py-5">
+              <button
+                onClick={() => setShowTranscript(v => !v)}
+                className="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+              >
+                <span>{showTranscript ? '▼' : '▶'}</span>
+                {showTranscript ? 'Nascondi trascrizione' : 'Mostra trascrizione completa'}
+              </button>
+              {showTranscript && (
+                <p className="mt-4 text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">
+                  {result.transcript}
+                </p>
+              )}
+            </div>
+          </section>
+        )}
+      </div>
     </div>
-  );
+  )
 }
