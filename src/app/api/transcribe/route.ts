@@ -4,6 +4,7 @@ import path from 'path'
 import os from 'os'
 import Groq from 'groq-sdk'
 import Anthropic from '@anthropic-ai/sdk'
+import ffmpegStatic from 'ffmpeg-static'
 
 export async function POST(request: Request) {
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
@@ -26,8 +27,9 @@ export async function POST(request: Request) {
     writeFileSync(videoPath, buffer)
 
     // Estrai audio con ffmpeg (mono, 64kbps)
+    const ffmpegBin = ffmpegStatic ?? 'ffmpeg'
     execSync(
-      `ffmpeg -i "${videoPath}" -vn -ac 1 -ar 16000 -b:a 64k "${audioPath}" -y`,
+      `"${ffmpegBin}" -i "${videoPath}" -vn -ac 1 -ar 16000 -b:a 64k "${audioPath}" -y`,
       { stdio: 'pipe' }
     )
 
