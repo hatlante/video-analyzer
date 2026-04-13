@@ -1,10 +1,8 @@
-import { execSync } from 'child_process'
 import { writeFileSync, unlinkSync, existsSync, createReadStream } from 'fs'
 import path from 'path'
 import os from 'os'
 import Groq from 'groq-sdk'
 import Anthropic from '@anthropic-ai/sdk'
-import ffmpegStatic from 'ffmpeg-static'
 
 export async function POST(request: Request) {
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
@@ -19,23 +17,15 @@ export async function POST(request: Request) {
 
   const ext = path.extname(file.name).toLowerCase() || '.mp4'
   const videoPath = path.join(os.tmpdir(), `video_${Date.now()}${ext}`)
-  const audioPath = path.join(os.tmpdir(), `audio_${Date.now()}.mp3`)
 
   try {
-    // Salva il file video in una cartella temporanea
+    // Salva il file in una cartella temporanea
     const buffer = Buffer.from(await file.arrayBuffer())
     writeFileSync(videoPath, buffer)
 
-    // Estrai audio con ffmpeg (mono, 64kbps)
-    const ffmpegBin = ffmpegStatic ?? 'ffmpeg'
-    execSync(
-      `"${ffmpegBin}" -i "${videoPath}" -vn -ac 1 -ar 16000 -b:a 64k "${audioPath}" -y`,
-      { stdio: 'pipe' }
-    )
-
-    // Trascrizione con Groq Whisper
+    // Trascrizione con Groq Whisper (accetta direttamente MP4, MOV, ecc.)
     const transcription = await groq.audio.transcriptions.create({
-      file: createReadStream(audioPath),
+      file: createReadStream(videoPath),
       model: 'whisper-large-v3',
       language: 'it',
       response_format: 'text',
@@ -69,6 +59,5 @@ ${transcript}`,
     return Response.json({ error: message }, { status: 500 })
   } finally {
     if (existsSync(videoPath)) unlinkSync(videoPath)
-    if (existsSync(audioPath)) unlinkSync(audioPath)
   }
 }
